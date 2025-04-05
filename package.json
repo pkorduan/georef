@@ -1,0 +1,19 @@
+{
+  "name": "georef",
+  "version": "1.0.0",
+  "description": "Program to georeferencing tiff files",
+  "main": "app.js",
+  "scripts": {
+    "dev": "lite-server"
+  },
+  "author": "Peter Korduan",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "geotiff": "^2.0.7",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "lite-server": "^2.6.1"
+  }
+}
