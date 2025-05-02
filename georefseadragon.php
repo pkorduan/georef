@@ -80,18 +80,18 @@ switch ($this->formvars['action']) {
       'lldhw' => 'numeric'
     ]);
     $c = $this->formvars;
-    // echo '<br>ul: ' . $c['ulx'] . ',' . $c['uly'];
-    // echo '<br>ur: ' . $c['urx'] . ',' . $c['ury'];
-    // echo '<br>lr: ' . $c['lrx'] . ',' . $c['lry'];
-    // echo '<br>ll: ' . $c['llx'] . ',' . $c['lly'];
-    // echo '<br>Kante oben: ' . ($c['urx'] - $c['ulx']);
-    // echo '<br>Kante rechts: ' . ($c['lry'] - $c['ury']);
-    // echo '<br>Kante unten: ' . ($c['lrx'] - $c['llx']);
-    // echo '<br>Kante links: ' . ($c['lly'] -  $c['uly']);
-    // echo '<br>uld: ' . $c['uldrw'] . ',' . $c['uldhw'];
-    // echo '<br>urd: ' . $c['urdrw'] . ',' . $c['urdhw'];
-    // echo '<br>lrd: ' . $c['lrdrw'] . ',' . $c['lrdhw'];
-    // echo '<br>lld: ' . $c['lldrw'] . ',' . $c['lldhw'];
+    echo '<br>ul: ' . $c['ulx'] . ',' . $c['uly'];
+    echo '<br>ur: ' . $c['urx'] . ',' . $c['ury'];
+    echo '<br>lr: ' . $c['lrx'] . ',' . $c['lry'];
+    echo '<br>ll: ' . $c['llx'] . ',' . $c['lly'];
+    echo '<br>Kante oben: ' . ($c['urx'] - $c['ulx']);
+    echo '<br>Kante rechts: ' . ($c['lry'] - $c['ury']);
+    echo '<br>Kante unten: ' . ($c['lrx'] - $c['llx']);
+    echo '<br>Kante links: ' . ($c['lly'] -  $c['uly']);
+    echo '<br>uld: ' . $c['uldrw'] . ',' . $c['uldhw'];
+    echo '<br>urd: ' . $c['urdrw'] . ',' . $c['urdhw'];
+    echo '<br>lrd: ' . $c['lrdrw'] . ',' . $c['lrdhw'];
+    echo '<br>lld: ' . $c['lldrw'] . ',' . $c['lldhw'];
     $filename = pathinfo($this->formvars['file_name'], PATHINFO_FILENAME);
     // Translate image to georeferenced Tiff
     $translate_file = $data_path . 'tmp/' . $filename . '_translate.tiff';
@@ -112,13 +112,32 @@ switch ($this->formvars['action']) {
       . ' -gcp ' . $c['lrx'] . ' ' . $c['lry'] . ' ' . $c['lrrw'] . ' ' . $c['lrhw']
       . ' -gcp ' . $c['llx'] . ' ' . $c['lly'] . ' ' . $c['llrw'] . ' ' . $c['llhw']
       . ' ' . $data_path . 'source/' . $filename . '.tiff ' . $translate_file;
-    // echo '<br>transform: ' . $tool . ' ' . $param;
+    echo '<br>transform: ' . $tool . ' ' . $param;
     $url = $gdal_container_connect . $tool . '&param=' . urlencode($param);
     $result = exec_cmd($url);
 		if (!$result['success']) {
       echo '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
       exit;
 		}
+
+//     // Cut georeferenced file to frame
+//     $geojson_text = '{
+//   "type": "FeatureCollection",
+//   "name": "Typ1_ak1223_cutline",
+//   "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:EPSG::25833" } },
+//   "features": [
+//     { "type": "Feature", "properties": { "id": 1223 }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ '
+//       . '[' . $c['ulrw'] . ', ' . $c['ulhw'] . '],'
+//       . '[' . $c['urrw'] . ', ' . $c['urhw'] . '],'
+//       . '[' . $c['lrrw'] . ', ' . $c['lrhw'] . '],'
+//       . '[' . $c['llrw'] . ', ' . $c['llhw'] . '],'
+//       . '[' . $c['ulrw'] . ', ' . $c['ulhw'] . ']'
+//       . '] ] ] } }
+//   ]
+// }';
+//   $geojson_file = $data_path . 'tmp/' . $filename . '_cutline.geojson';
+//   echo '<br>Schreibe Datei ' . $geojson_file;
+//   file_put_contents($geojson_file, $geojson_text);
 
   // gdalwarp \
   // -r bilinear \
@@ -133,7 +152,7 @@ switch ($this->formvars['action']) {
   // $param = '-co "TFW=YES" -s_srs EPSG:25833 -t_srs EPSG:25833 -cutline ' . $geojson_file . ' -crop_to_cutline -dstalpha -setci ' . $translate_file . ' ' . $warp_file;
   $param = '-co "TFW=YES" -r bilinear -tps -overwrite -te ' . $c['llrw'] . ' ' . $c['llhw'] . ' ' . $c['urrw'] . ' ' . $c['urhw'] . ' -t_srs EPSG:25833 -dstalpha -setci ' . $translate_file . ' ' . $warp_file;
 
-  // echo '<br>warp: ' . $tool . ' ' . $param;
+  echo '<br>warp: ' . $tool . ' ' . $param;
   $url = $gdal_container_connect . $tool . '&param=' . urlencode($param);
   $result = exec_cmd($url);
   if (!$result['success']) {
@@ -141,16 +160,10 @@ switch ($this->formvars['action']) {
     exit;
   }
 
-  // Write residues to csv
-  $csv_text = $c['ulrw'] . ';' . $c['ulhw'] . ';' . $c['uldrw'] . ';' . $c['uldhw'] . ';' . $c['urdrw'] . ';' . $c['urdhw'] . ';' . $c['lrdrw'] . ';' . $c['lrdhw'] . ';' . $c['lldrw'] . ';' . $c['lldhw'] . "\n";
-  $csv_file = $data_path . 'Restklaffen.csv';
-  echo '<br>Schreibe in CSV-Datei ' . $csv_file;
-  file_put_contents($csv_file, $csv_text, FILE_APPEND);
-
   $shp_file = $data_path . 'tileindex.shp';
   $tool = 'gdaltindex';
   $param = $shp_file . ' ' . $data_path . 'georef/' . $filename . '.tif';
-  // echo '<br>gdaltindex: ' . $tool . ' ' . $param;
+  echo '<br>gdaltindex: ' . $tool . ' ' . $param;
   $url = $gdal_container_connect . $tool . '&param=' . urlencode($param);
   $result = exec_cmd($url);
   if (!$result['success']) {
@@ -170,10 +183,10 @@ if ($file_name === 'not found') {
   exit;
 }
 $coords = get_coords($file_name); ?>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<!-- <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" /> -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
-<script src="<? echo $js_path; ?>geotiff.js"></script>
+<!-- <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script> -->
+<!-- <script src="<? echo $js_path; ?>geotiff.js"></script> -->
 <script src="<? echo $js_path; ?>helmert2D.js"></script>
 <style>
   /* #map {
@@ -182,18 +195,11 @@ $coords = get_coords($file_name); ?>
     cursor: url('<? echo $img_path; ?>crosshair-pnt64.png') 16 16, auto;
   } */
 
-  #georef {
-    height: 800px
-  }
-
   #viewer {
-    /* position: absolute; */
-    top: 0; left: 0;
     width: 100%;
-    height: 637px;
-    overflow: hidden; /* Nur hier begrenzen */
+    height: 500px;
     background: black;
-    cursor: url('<? echo $img_path; ?>crosshair-pnt64.png') 48 48, auto;
+    cursor: url('<? echo $img_path; ?>crosshair-pnt64.png') 16 16, auto;
   }
 
   .residues-box {
@@ -274,9 +280,11 @@ $coords = get_coords($file_name); ?>
   }
 </style>
 
-<div id="georef">
-  <div id="viewer"></div>
-  <!-- <div id="map"></div> -->
+<div id="viewer"></div>
+<img src="<?php echo URL . APPLVERSION . $script_url . '&only_main=1&action=get_file&file=' . $file_name; ?>"/><br>
+<?php echo URL . APPLVERSION . $script_url . '&only_main=1&action=get_file&file=' . $file_name; ?>
+
+<!-- <div id="map"></div> -->
   <input type="hidden" name="go" value="show_snippet"/>
   <input type="hidden" name="snippet" value="georef/georef"/>
   <input type="hidden" name="action" value="georef"/>
@@ -297,7 +305,7 @@ $coords = get_coords($file_name); ?>
   </div>
   <div class="clear"></div>
 
-  <div id="ul_box" class="coord-box">
+  <div id="ul_box" class="coord-box focus">
     <div class="headleft">Oben links:</div>
     <div class="cell"><input id="ulrw" name="ulrw" value="<?php echo $coords['ulrw']; ?>"></div>
     <div class="cell"><input id="ulhw" name="ulhw" value="<?php echo $coords['ulhw']; ?>"></div>
@@ -329,10 +337,10 @@ $coords = get_coords($file_name); ?>
     <div class="cell"><input id="lrhw" name="lrhw" value="<?php echo $coords['lrhw']; ?>"></div>
     <div class="cell"><input id="lrx"  name="lrx"></div>
     <div class="cell"><input id="lry"  name="lry"></div>
-    <div class="cell"><input id="lrdrw" name="lrdrw"></div>
-    <div class="cell"><input id="lrdhw" name="lrdhw"></div>
-    <div class="cell"><input id="lrdx"  name="lrdx"></div>
-    <div class="cell"><input id="lrdy"  name="lrdy"></div>
+    <div class="cell"><input id="lrdrw" name="rldrw"></div>
+    <div class="cell"><input id="lrdhw" name="rldhw"></div>
+    <div class="cell"><input id="lrdx"  name="rldx"></div>
+    <div class="cell"><input id="lrdy"  name="rldy"></div>
   </div>
   <div class="clear"></div>
 
@@ -353,43 +361,43 @@ $coords = get_coords($file_name); ?>
     <input id="georef_button" type="button" name="go" value="Georeferenzieren" onclick="georef();">
   </div>
   <div class="clear"></div>
-</div>
 <script>
   let views = {
     ul: {
       key: 'ul',
-      imagePoint: new OpenSeadragon.Point(190, 125),
+      pan: [18.5, 1.9],
       next: 'ur'
     },
     ur:
     {
       key: 'ur',
-      imagePoint: new OpenSeadragon.Point(1600, 125),
+      pan: [18.5, 16.0],
       next: 'lr'
     },
     lr:
     {
       key: 'lr',
-      imagePoint: new OpenSeadragon.Point(1600, 1555),
+      pan: [3.9, 16.0],
       next: 'll'
     },
     ll:
     {
       key: 'll',
-      imagePoint: new OpenSeadragon.Point(190, 1560),
+      pan: [3.9, 1.9],
       next: 'ul'
     }
   };
-  let current_view = views.ll;
-  let zoom = 10;
+  let current_view = views.ul;
+  let zoom = 9;
   let view_keys = Object.keys(views);
-  // var map = L.map('map').setView(current_view.pan, zoom);
-  var canvas = document.createElement('canvas');
-  var layer;
 
   const viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
+    tileSources: {
+      type: 'image',
+      url: '<?php echo URL . APPLVERSION . $script_url . '&only_main=1&action=get_file&file=' . $file_name; ?>'
+    },
     showNavigator: false,
     animationTime: 0.5,
     blendTime: 0.1,
@@ -400,6 +408,35 @@ $coords = get_coords($file_name); ?>
     zoomPerScroll: 1.2
   });
 
+  viewer.addHandler('canvas-click', function(event) {
+    let webPoint = event.position;
+    let viewportPoint = viewer.viewport.pointFromPixel(webPoint);
+    let imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+    console.log(`Klick bei: X=${Math.floor(imagePoint.x)}, Y=${Math.floor(imagePoint.y)}`);
+
+    // Bildgröße holen, um Koordinaten zu validieren
+    let imgDims = viewer.world.getItemAt(0).getContentSize();
+
+    if (
+      imagePoint.x >= 0 && imagePoint.x < imgDims.x &&
+      imagePoint.y >= 0 && imagePoint.y < imgDims.y
+    ) {
+      // document.getElementById('coords').innerText = `X: ${Math.floor(imagePoint.x)}, Y: ${Math.floor(imagePoint.y)}`;
+      imagePoint = new OpenSeadragon.Point(1900, 90);
+      viewportPoint = viewer.viewport.imageToViewportCoordinates(imagePoint);
+      // Pan to that point
+      viewer.viewport.panTo(viewportPoint);
+    } else {
+      console.log('außerhalb geklickt');
+    }
+  });
+
+
+
+  // var map = L.map('map').setView(current_view.pan, zoom);
+  // var canvas = document.createElement('canvas');
+  // var layer;
+
   //  let files = fs.readdirSync('map_tiff');
   // console.log('files', files);
   // var path = require('path');
@@ -408,83 +445,73 @@ $coords = get_coords($file_name); ?>
   //     displayGeoTIFF(files[i]);
   //   }
   // }
-  displayGeoTIFF('<? echo $file_name; ?>');
+  // displayGeoTIFF('<? echo $file_name; ?>');
 
   // L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   //   maxZoom: 19,
   // }).addTo(map);
 
-  async function displayGeoTIFF(fileName) {
-    // console.log('displayGeoTIFFF: ', fileName);
-    document.getElementById('file_name').value = fileName.split('/').reverse()[0];
-    const url = '<?php echo URL . APPLVERSION . $script_url; ?>&only_main=1&action=get_file&file=' + fileName;
-    var response = await fetch(url);
-    var arrayBuffer = await response.arrayBuffer();
+//   async function displayGeoTIFF(fileName) {
+//     // console.log('displayGeoTIFFF: ', fileName);
+//     document.getElementById('file_name').value = fileName.split('/').reverse()[0];
+//     const url = '<?php echo URL . APPLVERSION . $script_url; ?>&only_main=1&action=get_file&file=' + fileName;
+//     var response = await fetch(url);
+//     var arrayBuffer = await response.arrayBuffer();
 
-    var tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
-    var image = await tiff.getImage();
+//     var tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
+//     var image = await tiff.getImage();
 
-    var width = image.getWidth();
-    var height = image.getHeight();
-    // console.log(width, height);
-    var values = await image.readRasters();
+//     var width = image.getWidth();
+//     var height = image.getHeight();
+//     // console.log(width, height);
+//     var values = await image.readRasters();
 
-    canvas.width = width;
-    canvas.height = height;
+//     canvas.width = width;
+//     canvas.height = height;
 
-    var ctx = canvas.getContext('2d');
+//     var ctx = canvas.getContext('2d');
 
-    var imageData = ctx.createImageData(width, height);
-    var data = imageData.data;
-    for (var i = 0; i < width * height; i++) {
-      data[i * 4] = values[0][i];
-      data[i * 4 + 1] = values[1][i];
-      data[i * 4 + 2] = values[2][i];
-      data[i * 4 + 3] = 255;
-    }
+//     var imageData = ctx.createImageData(width, height);
+//     var data = imageData.data;
+//     for (var i = 0; i < width * height; i++) {
+//       data[i * 4] = values[0][i];
+//       data[i * 4 + 1] = values[1][i];
+//       data[i * 4 + 2] = values[2][i];
+//       data[i * 4 + 3] = 255;
+//     }
 
-    ctx.putImageData(imageData, 0, 0);
+//     ctx.putImageData(imageData, 0, 0);
 
+//     var bounds = [[0, 0], [19.73, 17.29]];
+//     //var bounds = [[0, 0], [72.06, 82.21]];
+//     layer = L.imageOverlay(canvas.toDataURL(), bounds).addTo(map);
+// debug_height = height;
+//     //map.fitBounds(bounds);
+//     map.on("click", (evt) => {
+//       let current_element = document.getElementById(current_view.key + 'x');
+//       let x = Math.round(evt.latlng.lng * 100);
+//       let y = Math.round(evt.latlng.lat * 100);
+//       document.getElementById(current_view.key + 'x').value = x;
+//       document.getElementById(current_view.key + 'y').value = height - y;
+//       nextCorner();
+//     });
 
-    // Canvas als DataURL in OpenSeadragon laden
-    const dataURL = canvas.toDataURL();
+//     map.on("keypress", function (evt) {
+//       if (evt.originalEvent.key == 'n') {
+//         console.log('keypress');
+//         nextCorner();
+//       }
+//     });
 
-    viewer.open({
-      type: 'image',
-      url: dataURL
-    });
+//   }
 
-    // var bounds = [[0, 0], [19.73, 17.29]];
-    // //var bounds = [[0, 0], [72.06, 82.21]];
-    // layer = L.imageOverlay(canvas.toDataURL(), bounds).addTo(map);
-
-    //map.fitBounds(bounds);
-    // map.on("click", (evt) => {
-    //   let current_element = document.getElementById(current_view.key + 'x');
-    //   let x = Math.round(evt.latlng.lng * 100);
-    //   let y = Math.round(evt.latlng.lat * 100);
-    //   document.getElementById(current_view.key + 'x').value = x;
-    //   document.getElementById(current_view.key + 'y').value = height - y;
-    //   nextCorner();
-    // });
-
-    // map.on("keypress", function (evt) {
-    //   if (evt.originalEvent.key == 'n') {
-    //     console.log('keypress');
-    //     nextCorner();
-    //   }
-    // });
-    const nextCorner = () => {
+  function nextCorner() {
       let next_view = views[current_view.next];
-      document.querySelectorAll('.coord-box').forEach(el => el.classList.remove('focus'));
+      console.log(`nextCorner`);
+      document.getElementById(current_view.key + '_box').classList.toggle('focus');
+      map.setView(next_view.pan, zoom);
       document.getElementById(next_view.key + '_box').classList.toggle('focus');
-
-      const viewport = viewer.viewport;
-      const viewportPoint = viewport.imageToViewportCoordinates(next_view.imagePoint);
-      console.log('zoomTo: %s p: %o z: %s', next_view.key, next_view.imagePoint, zoom);
-      viewport.panTo(viewportPoint);
-      viewport.zoomTo(zoom);
-
+      current_view = next_view;
       if (
         document.getElementById('ulx').value != '' &&
         document.getElementById('urx').value != '' &&
@@ -520,41 +547,7 @@ $coords = get_coords($file_name); ?>
 
         document.getElementById('georef_button').style.display = 'block';
       }
-      current_view = next_view;
     }
-
-    viewer.addHandler('canvas-click', function(event) {
-      let webPoint = event.position;
-      let viewportPoint = viewer.viewport.pointFromPixel(webPoint);
-      let imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
-      console.log(`Klick bei: X=${Math.floor(imagePoint.x)}, Y=${Math.floor(imagePoint.y)}`);
-
-      let imgDims = viewer.world.getItemAt(0).getContentSize();
-
-      if (
-        imagePoint.x >= 0 && imagePoint.x < imgDims.x &&
-        imagePoint.y >= 0 && imagePoint.y < imgDims.y
-      ) {
-        let current_element = document.getElementById(current_view.key + 'x');
-        document.getElementById(current_view.key + 'x').value = Math.round(imagePoint.x);
-        document.getElementById(current_view.key + 'y').value = Math.round(imagePoint.y);
-      } else {
-        console.log('außerhalb geklickt');
-      }
-
-      nextCorner();
-    });
-
-    viewer.addHandler('open', nextCorner);
-  }
-
-  // function nextCorner(current_view) {
-  //   const viewport = viewer.viewport;
-  //   const viewportPoint = viewport.imageToViewportCoordinates(current_view.imagePoint);
-  //   console.log('panTo: %o', viewportPoint);
-  //   viewport.panTo(viewportPoint);
-  //   viewport.zoomTo(8);
-  // }
 
   /**
    * Sendet das Formular zur Georeferenzierung und Speicherung der Ergebnisdaten ab und

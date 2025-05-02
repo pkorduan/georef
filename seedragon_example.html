@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <title>Bild Zoom & Pixel-Koordinaten</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+    <style>
+        #viewer {
+            width: 100vw;
+            height: 100vh;
+            background: #000;
+        }
+        #coords {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 5px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+
+<div id="viewer"></div>
+<div id="coords">X: –, Y: –</div>
+
+<script>
+    const viewer = OpenSeadragon({
+      id: "viewer",
+      prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
+      tileSources: {
+          type: 'image',
+          url: 'bild.jpg'
+      }
+    });
+
+    viewer.addHandler('canvas-hover', function(event) {
+        const webPoint = event.position;
+        const viewportPoint = viewer.viewport.pointFromPixel(webPoint);
+        const imagePoint = viewer.viewport.viewportToImageCoordinates(viewportPoint);
+
+        document.getElementById('coords').innerText =
+            `X: ${Math.floor(imagePoint.x)}, Y: ${Math.floor(imagePoint.y)}`;
+    });
+
+    // Optional: Mauszeiger versteckt sich nicht beim Rausgehen
+    viewer.addHandler('canvas-exit', function() {
+        document.getElementById('coords').innerText = 'X: –, Y: –';
+    });
+</script>
+
+</body>
+</html>
