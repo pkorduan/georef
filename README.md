@@ -1,1 +1,1 @@
-Georeferenzierung von Tiff-Dateien über 4 Punkte mit Helmert-Transformation
+Custom Snippet von WebGIS kvwmap (kvwmap.de) zur Georeferenzierung von Tiff-Dateien über 4 Punkte mit Helmert-Transformation.
