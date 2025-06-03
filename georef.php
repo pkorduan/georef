@@ -1,5 +1,6 @@
 <?php
 include_once(CLASSPATH . 'PgObject.php');
+include_once(CLASSPATH . 'BackgroundJob.php');
 $js_path = CUSTOM_PATH . 'layouts/snippets/georef/js/';
 $img_path = CUSTOM_PATH . 'layouts/snippets/georef/img/';
 $data_path = SHAPEPATH . 'hro_hist_raka/';
@@ -61,7 +62,7 @@ function get_next_blatt($data_path) {
   $blatt = $pg_obj->find_where(
     "id = " . $results[0]['id'],
     NULL,
-    "*, ST_XMin(the_geom) AS west, ST_XMax(the_geom) AS east, ST_YMin(the_geom) AS south, ST_YMax(the_geom) AS north"
+    "*, llrw, llhw, ulrw, ulhw, urrw, urhw, lrrw, lrhw"
   )[0];
 
   if (!file_exists($src_path . $blatt->get('ordner') . '/' . $blatt->get('file_name'))) {
@@ -78,20 +79,79 @@ function get_next_blatt($data_path) {
   );
 }
 
-function get_coords($blatt) {
-  return array(
-    'ulrw' => $blatt->get('west'),
-    'ulhw' => $blatt->get('north'),
-    'urrw' => $blatt->get('east'),
-    'urhw' => $blatt->get('north'),
-    'lrrw' => $blatt->get('east'),
-    'lrhw' => $blatt->get('south'),
-    'llrw' => $blatt->get('west'),
-    'llhw' => $blatt->get('south')
+function list_errors($pg_obj, $msg = NULL) {
+  echo '<h2 style="margin: 10px;">Fehlerliste</h2>';
+  if ($msg) {
+    echo $msg . '<p>';
+  }
+  $fehlerblaetter = $pg_obj->find_where(
+    "state LIKE '%Fehler%'",
+    "updated_at DESC",
+    "id, ordner, file_name, state, updated_at, msg"
   );
+  if (count($fehlerblaetter) > 0) {
+    echo '<table border="1" cellspacing="0" cellpadding="0">' .
+    '<tr>' .
+      implode('', array_map(
+        function($key) {
+          return '<th>' . $key . '</th>';
+        },
+        $fehlerblaetter[0]->getKeys()
+      )) .
+    '<th>Funktionen</th>' .
+    '</tr>' .
+    implode('', array_map(
+      function($blatt) {
+        return '<tr>' .
+          implode('', array_map(
+            function($value) {
+              return '<td>' . $value . '</td>';
+            },
+            $blatt->getValues()
+          )) .
+          '<td style="text-align: center"><a href="index.php?go=show_snippet&snippet=georef/georef&action=reset_file&file_id=' . $blatt->get_id() . '&csrf_token=' . $_SESSION['csrf_token'] . '">reset</a></td>' .
+        '</tr>';
+      },
+      $fehlerblaetter
+    ));
+  }  
+  else {
+    echo 'Keine Fehler gefunden!';
+  } 
 }
 
 switch ($this->formvars['action']) {
+  case 'cancel_file' : {
+    $this->sanitize([
+      'file_id' => 'integer'
+    ]);
+    $pg_obj = new PgObject($this, 'hist_maps', 'blattschnitte');
+    $blatt = $pg_obj->find_where("id = " . $this->formvars['file_id'])[0];
+    $blatt->update_attr("state = NULL");
+    echo '<p>Abbruch Georeferenzierung für Blatt ' . $blatt->get('blattnummer') . ' id: ' . $blatt->get_id();
+    exit;
+  } break;
+  case 'reset_file' : {
+    $this->sanitize([
+      'file_id' => 'integer'
+    ]);
+    $pg_obj = new PgObject($this, 'hist_maps', 'blattschnitte');
+    $blatt = $pg_obj->find_where("id = " . $this->formvars['file_id'])[0];
+    $blatt->update_attr(array(
+      "state = NULL",
+      "updated_at = NULL",
+      "msg = NULL"
+    ));
+    $georef_file =  $data_path . 'georef/' . $blatt->get('ordner') . '/' . $blatt->get('file_name');
+    unlink($georef_file);
+    list_errors($pg_obj, '<p>Georeferenzierung für Blatt ' . $blatt->get('blattnummer') . ' id: ' . $blatt->get_id() . ' zurückgesetzt und Datei ' . $georef_file . ' gelöscht.');
+    exit;
+  } break;
+  case 'list_errors' : {
+    $pg_obj = new PgObject($this, 'hist_maps', 'blattschnitte');
+    list_errors($pg_obj);
+    exit;
+  } break;
   case 'get_file' : {
     $this->sanitize([
       'ordner' => 'text',
@@ -183,11 +243,7 @@ switch ($this->formvars['action']) {
     $c = $this->formvars;
     $file_id = $this->formvars['file_id'];
     $pg_obj = new PgObject($this, 'hist_maps', 'blattschnitte');
-    $blatt = $pg_obj->find_where(
-      "id = " . $file_id,
-      NULL,
-      "*, ST_XMin(the_geom) AS west, ST_XMax(the_geom) AS east, ST_YMin(the_geom) AS south, ST_YMax(the_geom) AS north"
-    )[0];
+    $blatt = $pg_obj->find_where("id = " . $file_id)[0];
     if (php_sapi_name() !== 'cli' AND $this->formvars['run_background_jobs'] == '') {
       // Write results of georeferencing to database
       $blatt->update_attr(array(
@@ -224,6 +280,7 @@ switch ($this->formvars['action']) {
       $this->start_background_task();
     }
     else {
+      $job = BackgroundJob::find($this, "id = " . $this->formvars['background_job_id'])[0];
       // Translate image to georeferenced Tiff
       $src_file = $data_path . 'source/' . $blatt->get('ordner') . '/'. $blatt->get('file_name');
       $tmp_file = $data_path . 'tmp/' . $blatt->get('ordner') . '/' . $blatt->get('file_name');
@@ -235,36 +292,46 @@ switch ($this->formvars['action']) {
         . ' -gcp ' . $c['urx'] . ' ' . $c['ury'] . ' ' . $c['urrw'] . ' ' . $c['urhw']
         . ' -gcp ' . $c['lrx'] . ' ' . $c['lry'] . ' ' . $c['lrrw'] . ' ' . $c['lrhw']
         . ' -gcp ' . $c['llx'] . ' ' . $c['lly'] . ' ' . $c['llrw'] . ' ' . $c['llhw']
-        . ' ' . $src_file . ' ' . $tmp_file;
+        . ' "' . $src_file . '" "' . $tmp_file . '"';
       echo '<br>transform: ' . $tool . ' ' . $param;
       $url = $gdal_container_connect . $tool . '&param=' . urlencode($param);
       $result = exec_cmd($url);
       if (!$result['success']) {
-        echo '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
+        $msg = '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
+        $job->update_attr(array("job_status = 'Fehler'"));
+        $blatt->update_attr(array("state = 'Fehler'", "msg = '" . pg_escape_string($msg) . "'"));
+        echo $msg;
         exit;
       }
 
       $georef_file =  $data_path . 'georef/' . $blatt->get('ordner') . '/' . $blatt->get('file_name');
       $tool = 'gdalwarp';
-      $param = "-r bilinear -tps -overwrite -dstalpha -setci -co COMPRESS=DEFLATE -co PREDICTOR=2 -co TILED=YES -s_srs EPSG:25833 -t_srs EPSG:25833 -cutline_srs EPSG:25833 -cutline 'POLYGON((" . $c['llrw'] . ' ' . $c['llhw'] . ',' . $c['ulrw'] . ' ' . $c['ulhw'] . ',' . $c['urrw'] . ' ' . $c['urhw'] . ',' . $c['lrrw'] . ' ' . $c['lrhw'] . ',' . $c['llrw'] . ' ' . $c['llhw'] . "))' -crop_to_cutline " . $tmp_file . ' ' . $georef_file;
+      $param = "-r bilinear -tps -overwrite -dstalpha -setci -co COMPRESS=DEFLATE -co PREDICTOR=2 -co TILED=YES -s_srs EPSG:25833 -t_srs EPSG:25833 -te_srs EPSG:25833 -cutline_srs EPSG:25833 -cutline 'POLYGON((" . $c['llrw'] . ' ' . $c['llhw'] . ',' . $c['ulrw'] . ' ' . $c['ulhw'] . ',' . $c['urrw'] . ' ' . $c['urhw'] . ',' . $c['lrrw'] . ' ' . $c['lrhw'] . ',' . $c['llrw'] . ' ' . $c['llhw'] . "))' -crop_to_cutline " . '"' . $tmp_file . '" "' . $georef_file . '"';
       echo '<br>warp: ' . $tool . ' ' . $param;
       $url = $gdal_container_connect . $tool . '&param=' . urlencode($param);
       $result = exec_cmd($url);
       if (!$result['success']) {
-        echo '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
+        $msg = '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
+        $job->update_attr(array("job_status = 'Fehler'"));
+        $blatt->update_attr(array("state = 'Fehler'", "msg = '" . pg_escape_string($msg) . "'"));
+        echo $msg;
         exit;
       }
 
       $shp_file = $data_path . 'Blattschnitt_' . $blatt->get('ordner') . '.shp';
       $tool = 'gdaltindex';
-      $param = '-overwrite ' . $shp_file . ' ' . $data_path . 'georef/' . $blatt->get('ordner') . '/*.tif';
+      $param = "'" . $shp_file . "' '" . $georef_file . "'";
       echo '<br>gdaltindex: ' . $tool . ' ' . $param;
       $url = $gdal_container_connect . $tool . '&param=' . urlencode($param);
       $result = exec_cmd($url);
       if (!$result['success']) {
-        echo '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
+        $msg = '<p>Fehler beim Befehl: ' . $url . ' result: ' . print_r($result['output'], true);
+        $job->update_attr(array("job_status = 'Fehler'"));
+        $blatt->update_attr(array("state = 'Fehler'", "msg = '" . pg_escape_string($msg) . "'"));
+        echo $msg;
         exit;
       }
+      $job->update_attr(array("job_status = 'ok'"));
       $blatt->update_attr(array(
         "state = 'fertig'",
         "updated_at = now()"
@@ -285,8 +352,7 @@ if (!$result['success']) {
   exit;
 }
 $blatt = $result['blatt'];
-// echo 'Nächste Datei: ' . $data_path . $blatt->get('pfad'); exit;
-$coords = get_coords($blatt); ?>
+// echo 'Nächste Datei: ' . $data_path . $blatt->get('pfad'); exit; ?>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
@@ -322,8 +388,15 @@ $coords = get_coords($blatt); ?>
     width: 100%;
   }
 
-  .submit-box input {
+  #georef_button {
+    float: left;
+    margin-left: 5px;
     display: none;
+  }
+
+  #cancel_button {
+    float: left;
+    margin-left: 45%;
   }
 
   .file-box{
@@ -360,6 +433,10 @@ $coords = get_coords($blatt); ?>
     display: flex;
     border: 2px solid white;
     padding-left: 2px;
+  }
+
+  .residues {
+    border: 2px solid white;
   }
 
   .focus {
@@ -431,89 +508,92 @@ $coords = get_coords($blatt); ?>
 
   <div id="ul_box" class="coord-box">
     <div class="headleft">Oben links:</div>
-    <div class="cell"><input id="ulrw" name="ulrw" value="<?php echo $coords['ulrw']; ?>"></div>
-    <div class="cell"><input id="ulhw" name="ulhw" value="<?php echo $coords['ulhw']; ?>"></div>
+    <div class="cell"><input id="ulrw" name="ulrw" value="<?php echo $blatt->get('ulrw'); ?>"></div>
+    <div class="cell"><input id="ulhw" name="ulhw" value="<?php echo $blatt->get('ulhw'); ?>"></div>
     <div class="cell"><input id="ulx"  name="ulx"></div>
     <div class="cell"><input id="uly"  name="uly"></div>
-    <div class="cell"><input id="uldrw" name="uldrw"></div>
-    <div class="cell"><input id="uldhw" name="uldhw"></div>
-    <div class="cell"><input id="uldx"  name="uldx"></div>
-    <div class="cell"><input id="uldy"  name="uldy"></div>
+    <div class="cell residues"><input id="uldrw" name="uldrw"></div>
+    <div class="cell residues"><input id="uldhw" name="uldhw"></div>
+    <div class="cell residues"><input id="uldx"  name="uldx"></div>
+    <div class="cell residues"><input id="uldy"  name="uldy"></div>
   </div>
   <div class="clear"></div>
 
   <div id="ur_box" class="coord-box">
     <div class="headleft">Oben rechts:</div>
-    <div class="cell"><input id="urrw" name="urrw" value="<?php echo $coords['urrw']; ?>"></div>
-    <div class="cell"><input id="urhw" name="urhw" value="<?php echo $coords['urhw']; ?>"></div>
+    <div class="cell"><input id="urrw" name="urrw" value="<?php echo $blatt->get('urrw'); ?>"></div>
+    <div class="cell"><input id="urhw" name="urhw" value="<?php echo $blatt->get('urhw'); ?>"></div>
     <div class="cell"><input id="urx"  name="urx"></div>
     <div class="cell"><input id="ury"  name="ury"></div>
-    <div class="cell"><input id="urdrw" name="urdrw"></div>
-    <div class="cell"><input id="urdhw" name="urdhw"></div>
-    <div class="cell"><input id="urdx"  name="urdx"></div>
-    <div class="cell"><input id="urdy"  name="urdy"></div>
+    <div class="cell residues"><input id="urdrw" name="urdrw"></div>
+    <div class="cell residues"><input id="urdhw" name="urdhw"></div>
+    <div class="cell residues"><input id="urdx"  name="urdx"></div>
+    <div class="cell residues"><input id="urdy"  name="urdy"></div>
   </div>
   <div class="clear"></div>
 
   <div id="lr_box" class="coord-box">
     <div class="headleft">Unten rechts:</div>
-    <div class="cell"><input id="lrrw" name="lrrw" value="<?php echo $coords['lrrw']; ?>"></div>
-    <div class="cell"><input id="lrhw" name="lrhw" value="<?php echo $coords['lrhw']; ?>"></div>
+    <div class="cell"><input id="lrrw" name="lrrw" value="<?php echo $blatt->get('lrrw'); ?>"></div>
+    <div class="cell"><input id="lrhw" name="lrhw" value="<?php echo $blatt->get('lrhw'); ?>"></div>
     <div class="cell"><input id="lrx"  name="lrx"></div>
     <div class="cell"><input id="lry"  name="lry"></div>
-    <div class="cell"><input id="lrdrw" name="lrdrw"></div>
-    <div class="cell"><input id="lrdhw" name="lrdhw"></div>
-    <div class="cell"><input id="lrdx"  name="lrdx"></div>
-    <div class="cell"><input id="lrdy"  name="lrdy"></div>
+    <div class="cell residues"><input id="lrdrw" name="lrdrw"></div>
+    <div class="cell residues"><input id="lrdhw" name="lrdhw"></div>
+    <div class="cell residues"><input id="lrdx"  name="lrdx"></div>
+    <div class="cell residues"><input id="lrdy"  name="lrdy"></div>
   </div>
   <div class="clear"></div>
 
   <div id="ll_box" class="coord-box">
     <div class="headleft">Unten links:</div>
-    <div class="cell"><input id="llrw" name="llrw" value="<?php echo $coords['llrw']; ?>"></div>
-    <div class="cell"><input id="llhw" name="llhw" value="<?php echo $coords['llhw']; ?>"></div>
+    <div class="cell"><input id="llrw" name="llrw" value="<?php echo $blatt->get('llrw'); ?>"></div>
+    <div class="cell"><input id="llhw" name="llhw" value="<?php echo $blatt->get('llhw'); ?>"></div>
     <div class="cell"><input id="llx"  name="llx"></div>
     <div class="cell"><input id="lly"  name="lly"></div>
-    <div class="cell"><input id="lldrw" name="lldrw"></div>
-    <div class="cell"><input id="lldhw" name="lldhw"></div>
-    <div class="cell"><input id="lldx"  name="lldx"></div>
-    <div class="cell"><input id="lldy"  name="lldy"></div>
+    <div class="cell residues"><input id="lldrw" name="lldrw"></div>
+    <div class="cell residues"><input id="lldhw" name="lldhw"></div>
+    <div class="cell residues"><input id="lldx"  name="lldx"></div>
+    <div class="cell residues"><input id="lldy"  name="lldy"></div> ds [m] <div class="cell residues"><input id="ds"  name="ds"></div>
   </div>
   <div class="clear"></div>
 
   <div class="submit-box">
+    <input id="cancel_button" type="button" name="go" value="Abbrechen" onclick="cancel();">
     <input id="georef_button" type="button" name="go" value="Georeferenzieren" onclick="georef();">
   </div>
   <div class="clear"></div>
 </div>
 
-<script>
-  let views = {
-    ul: {
-      key: 'ul',
-      offset: [500, 100],
-      size: 2000
-    },
-    ur:
-    {
-      key: 'ur',
-      offset: [<? echo $blatt->get('width') - 2000; ?>, 100],
-      size: 2000
-    },
-    lr:
-    {
-      key: 'lr',
-      offset: [<? echo $blatt->get('width') - 2000; ?>, <? echo $blatt->get('height') - 2700; ?>],
-      size: 2000
-    },
-    ll:
-    {
-      key: 'll',
-      offset: [500, <? echo $blatt->get('height') - 2700; ?>],
-      size: 2000
-    }
-  }; <?
-  if ($blatt->get('ordner') != 'ordner1') { ?>
+<script><?
+  if ($blatt->get('ordner') === 'ordner1') { ?>
+    let views = {
+      ul: {
+        key: 'ul',
+        offset: [500, 100],
+        size: 2000
+      },
+      ur:
+      {
+        key: 'ur',
+        offset: [<? echo $blatt->get('width') - 2000; ?>, 100],
+        size: 2000
+      },
+      lr:
+      {
+        key: 'lr',
+        offset: [<? echo $blatt->get('width') - 2000; ?>, <? echo $blatt->get('height') - 2700; ?>],
+        size: 2000
+      },
+      ll:
+      {
+        key: 'll',
+        offset: [500, <? echo $blatt->get('height') - 2700; ?>],
+        size: 2000
+      }
+    }; <?
+  }
+  else { ?>
     views = {
       ul: {
         key: 'ul',
@@ -644,7 +724,11 @@ $coords = get_coords($blatt); ?>
         document.getElementById('lrdy').value = result.v[2][1] / pixSize[1];
         document.getElementById('lldx').value = result.v[3][0] / pixSize[0];
         document.getElementById('lldy').value = result.v[3][1] / pixSize[1];
+        document.getElementById('ds').value = result.s;
+        $('.residues').css('border-color', (result.s > 1.5 ? 'red' : 'green'));
+        $('.residues').css('color', (result.s > 1.5 ? 'red' : 'green'));
         console.log('result: %o', result);
+        debug_r = result;
 
         document.getElementById('georef_button').style.display = 'block';
       }
@@ -656,6 +740,11 @@ $coords = get_coords($blatt); ?>
    * läd das nächste Bild
    */
   function georef() {
+    document.GUI.submit();
+  }
+
+  function cancel() {
+    $('input[name="action"]').val('cancel_file');
     document.GUI.submit();
   }
 

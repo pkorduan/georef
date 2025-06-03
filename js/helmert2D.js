@@ -30,6 +30,9 @@ function helmert2D(karte, natur) {
   // Restklaffen Natur
   const v = diff(natur, nt);
 
+  // Summe der Quadrate der Restklaffen Natur
+  const s = sumqr(v);
+
   return {
     'k' : karte,
     'n' : natur,
@@ -40,7 +43,8 @@ function helmert2D(karte, natur) {
     'o'  : o,
     'a'  : a,
     'nt' : nt,
-    'v'  : v
+    'v'  : v,
+    's'  : s
   };
 }
 
@@ -60,6 +64,17 @@ function trans(ns, kd, o, a) {
 function sumq(pts) {
   return pts
     .map((p) => (p[0] * p[0]) + (p[1] * p[1]))
+    .reduce((accumulator, current) => accumulator + current, 0);
+}
+
+/**
+ * Function aggregates the square root of the sum of the squares of points coordinates.
+ * @param {*} pts 
+ * @returns 
+ */
+function sumqr(pts) {
+  return pts
+    .map((p) => Math.sqrt((p[0] * p[0]) + (p[1] * p[1])))
     .reduce((accumulator, current) => accumulator + current, 0);
 }
 
